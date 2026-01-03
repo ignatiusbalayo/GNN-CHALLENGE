@@ -1,0 +1,6 @@
+venv/
+__pycache__/
+.DS_Store
+setup_challenge.py
+SECRET_KEY.txt
+submissions/

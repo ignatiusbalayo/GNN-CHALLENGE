@@ -1,0 +1,5 @@
+torch>=2.2.0
+dgl>=2.1.0
+pandas
+scikit-learn
+numpy<2.0
