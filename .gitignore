@@ -7,9 +7,7 @@ venv/
 setup_challenge.py
 # Challenge Secrets & Data
 data/private_labels.csv
-private_labels.csv
-results.json
-
+SECRET_KEY.txt
 # IDE
 .vscode/
 .idea/
