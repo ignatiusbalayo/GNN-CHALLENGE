@@ -1,5 +1,15 @@
-venv/
+
+# Python
 __pycache__/
+*.py[cod]
+venv/
 .DS_Store
 setup_challenge.py
-SECRET_KEY.txt
+# Challenge Secrets & Data
+data/private_labels.csv
+private_labels.csv
+results.json
+
+# IDE
+.vscode/
+.idea/

@@ -1,73 +1,36 @@
-name: Auto-Grader Bot
+name: GNN Challenge Grading
 on:
-  pull_request_target:
-    paths: ['submissions/*.csv']
-
-permissions:
-  contents: read
-  pull-requests: write
+  push:
+    paths:
+      - 'submissions/**'
 
 jobs:
-  grade-submission:
+  grade:
     runs-on: ubuntu-latest
     steps:
-      # 1. Checkout Organizer Repo (To get grader.py)
-      - uses: actions/checkout@v3
-        with:
-          path: organizer
-
-      # 2. Checkout Student Repo (To get their CSV)
-      - uses: actions/checkout@v3
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          path: student
-
-      # 3. Setup Python
-      - uses: actions/setup-python@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      # 4. Install Libraries
-      - run: pip install pandas scikit-learn
+      - name: Install Dependencies
+        run: pip install -r requirements.txt
 
-      # 5. Run The Grader
-      - name: Calculate Score
-        id: score_step
+      - name: Run Evaluation
         env:
-          SECRET_KEY: ${{ secrets.TEST_LABELS }}
-        run: |
-          # Find the CSV file
-          FILE=$(find student/submissions -name "*.csv" | head -n 1)
-          echo "Grading: $FILE"
-          
-          # Run script
-          OUTPUT=$(python organizer/grader.py "$FILE")
-          echo "Script output: $OUTPUT"
-          
-          # Extract score
-          SCORE=$(echo "$OUTPUT" | grep "ACCURACY" | cut -d':' -f2)
-          echo "final_score=$SCORE" >> $GITHUB_OUTPUT
+          GRADING_KEY: ${{ secrets.GRADING_KEY }} # Private labels key
+        run: python scripts/evaluate.py
 
-      # 6. Post Comment
-      - name: Comment on PR
-        uses: actions/github-script@v6
-        with:
-          script: |
-            const score = "${{ steps.score_step.outputs.final_score }}";
-            let msg = "";
-            
-            if (score) {
-               msg = `### 🤖 Auto-Grader Report\n**Accuracy:** ${score}%\n\n`;
-               if (parseFloat(score) > 75.0) msg += "🌟 **DISTINCTION!** Amazing work.";
-               else if (parseFloat(score) > 65.0) msg += "✅ **PASSED!** Good job.";
-               else msg += "❌ **KEEP TRYING.** You need >65% to pass.";
-            } else {
-               msg = "⚠️ **Error:** Could not grade file. Check your CSV format.";
-            }
-            
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: msg
-            });
+      - name: Update Leaderboard
+        run: python scripts/gen_leaderboard.py
+
+      - name: Commit & Push Changes
+        run: |
+          git config --global user.name "Leaderboard-Bot"
+          git config --global user.email "bot@github.com"
+          git add docs/leadership.html results.json
+          git commit -m "Update leaderboard with new submission"
+          git push
