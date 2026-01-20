@@ -3,25 +3,37 @@ on:
   push:
     paths:
       - 'submissions/**'
+    branches:
+      - main
+  workflow_dispatch: # Allows you to run it manually for testing
 
 jobs:
   grade:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # Essential for pushing leaderboard updates
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-      
+        with:
+          fetch-depth: 0 # Fetches all history for proper git operations
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
       - name: Install Dependencies
-        run: pip install -r requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
       - name: Run Evaluation
         env:
-          GRADING_KEY: ${{ secrets.GRADING_KEY }} # Private labels key
+          # Pass the private labels secret to the environment
+          GRADING_KEY: ${{ secrets.GRADING_KEY }} 
+          GITHUB_ACTOR: ${{ github.actor }}
         run: python scripts/evaluate.py
 
       - name: Update Leaderboard
@@ -31,6 +43,15 @@ jobs:
         run: |
           git config --global user.name "Leaderboard-Bot"
           git config --global user.email "bot@github.com"
-          git add docs/leadership.html results.json
-          git commit -m "Update leaderboard with new submission"
-          git push
+          
+          # Use pathspec-safe adding
+          if [ -f results.json ]; then git add results.json; fi
+          if [ -f docs/leadership.html ]; then git add docs/leadership.html; fi
+          
+          # Only commit and push if there are changes to avoid 'nothing to commit' errors
+          if git diff --cached --quiet; then
+            echo "No changes to the leaderboard or results."
+          else
+            git commit -m "Update leaderboard: ${{ github.actor }} submission"
+            git push origin main
+          fi
