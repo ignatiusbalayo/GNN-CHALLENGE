@@ -1,57 +1,158 @@
-name: GNN Challenge Grading
+name: Grade Submission
+
 on:
-  push:
+  pull_request:
     paths:
-      - 'submissions/**'
-    branches:
-      - main
-  workflow_dispatch: # Allows you to run it manually for testing
+      - 'submissions/**.csv'
 
 jobs:
   grade:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Essential for pushing leaderboard updates
-
+      contents: write
+      pull-requests: write
+    
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # Fetches all history for proper git operations
+    - name: Checkout code
+      uses: actions/checkout@v3
+      with:
+        ref: ${{ github.event.pull_request.head.ref }}
+        token: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pandas scikit-learn numpy
+    
+    - name: Download private labels
+      env:
+        PRIVATE_LABELS: ${{ secrets.PRIVATE_LABELS }}
+      run: |
+        mkdir -p data
+        echo "$PRIVATE_LABELS" > data/private_labels.csv
+        echo "✓ Private labels downloaded"
+    
+    - name: Find submission file
+      id: find_submission
+      run: |
+        SUBMISSION_FILE=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep 'submissions/.*\.csv$' | head -1)
+        if [ -z "$SUBMISSION_FILE" ]; then
+          echo "❌ No submission file found in diff"
+          exit 1
+        fi
+        echo "file=$SUBMISSION_FILE" >> $GITHUB_OUTPUT
+        echo "✓ Found submission: $SUBMISSION_FILE"
+    
+    - name: Grade submission
+      id: grade
+      run: |
+        python grader.py ${{ steps.find_submission.outputs.file }} > results.json
+        cat results.json
+      continue-on-error: true
+    
+    - name: Read results
+      id: results
+      run: |
+        if [ ! -f results.json ]; then
+          echo "status=error" >> $GITHUB_OUTPUT
+          echo "message=Grading failed to produce results" >> $GITHUB_OUTPUT
+          echo "accuracy=0" >> $GITHUB_OUTPUT
+          echo "macro_f1=0" >> $GITHUB_OUTPUT
+          echo "username=unknown" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+        
+        ACCURACY=$(python -c "import json; print(json.load(open('results.json')).get('accuracy', 0))" 2>/dev/null || echo "0")
+        MACRO_F1=$(python -c "import json; print(json.load(open('results.json')).get('macro_f1', 0))" 2>/dev/null || echo "0")
+        USERNAME=$(python -c "import json; print(json.load(open('results.json')).get('username', 'unknown'))" 2>/dev/null || echo "unknown")
+        STATUS=$(python -c "import json; print(json.load(open('results.json')).get('status', 'error'))" 2>/dev/null || echo "error")
+        MESSAGE=$(python -c "import json; print(json.load(open('results.json')).get('message', 'Unknown error'))" 2>/dev/null || echo "Unknown error")
+        
+        echo "accuracy=$ACCURACY" >> $GITHUB_OUTPUT
+        echo "macro_f1=$MACRO_F1" >> $GITHUB_OUTPUT
+        echo "username=$USERNAME" >> $GITHUB_OUTPUT
+        echo "status=$STATUS" >> $GITHUB_OUTPUT
+        echo "message<<EOF" >> $GITHUB_OUTPUT
+        echo "$MESSAGE" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+    
+    - name: Comment PR - Success
+      if: steps.results.outputs.status == 'success'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: `## 🎉 Submission Graded Successfully!
+            
+**Username:** ${{ steps.results.outputs.username }}
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
+### 📊 Results:
+- **Accuracy:** ${{ steps.results.outputs.accuracy }}%
+- **Macro-F1:** ${{ steps.results.outputs.macro_f1 }}
 
-      - name: Install Dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+### 🏆 Leaderboard:
+Your submission will appear on the [leaderboard](https://igntrevor.github.io/GNN-CHALLENGE/leaderboard.html) once this PR is merged!
 
-      - name: Run Evaluation
-        env:
-          # Pass the private labels secret to the environment
-          GRADING_KEY: ${{ secrets.GRADING_KEY }} 
-          GITHUB_ACTOR: ${{ github.actor }}
-        run: python scripts/evaluate.py
+### 📈 Performance Tier:
+${{ steps.results.outputs.macro_f1 >= 0.65 && '🟢 **Excellent** - State-of-the-art performance!' || steps.results.outputs.macro_f1 >= 0.50 && '🟡 **Good** - Above baseline!' || '🔴 **Baseline** - Room for improvement!' }}
 
-      - name: Update Leaderboard
-        run: python scripts/gen_leaderboard.py
+---
+*Automated grading by GitHub Actions*`
+          })
+    
+    - name: Comment PR - Failure
+      if: steps.results.outputs.status == 'error'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: `## ❌ Submission Failed
 
-      - name: Commit & Push Changes
-        run: |
-          git config --global user.name "Leaderboard-Bot"
-          git config --global user.email "bot@github.com"
-          
-          # Use pathspec-safe adding
-          if [ -f results.json ]; then git add results.json; fi
-          if [ -f docs/leadership.html ]; then git add docs/leadership.html; fi
-          
-          # Only commit and push if there are changes to avoid 'nothing to commit' errors
-          if git diff --cached --quiet; then
-            echo "No changes to the leaderboard or results."
-          else
-            git commit -m "Update leaderboard: ${{ github.actor }} submission"
-            git push origin main
-          fi
+**Error:** ${{ steps.results.outputs.message }}
+
+Please fix the issues and update your submission.
+
+### Common Issues:
+- ❌ Incorrect file format (must be CSV with 'id' and 'pred_label' columns)
+- ❌ Missing test IDs (must include ALL IDs from test_no_label.csv)
+- ❌ Invalid class labels (must be Class_A through Class_F)
+- ❌ Duplicate IDs
+- ❌ Extra columns (only id and pred_label allowed)
+
+### How to Fix:
+1. Check your CSV format matches the example
+2. Verify all test IDs are included
+3. Ensure labels are Class_A, Class_B, etc. (not 0,1,2)
+4. Remove any extra columns
+
+---
+*Automated grading by GitHub Actions*`
+          })
+    
+    - name: Update leaderboard
+      if: steps.results.outputs.status == 'success'
+      run: |
+        python scripts/update_leaderboard.py results.json
+        echo "✓ Leaderboard updated"
+      continue-on-error: true
+    
+    - name: Commit leaderboard update
+      if: steps.results.outputs.status == 'success'
+      run: |
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git config --local user.name "github-actions[bot]"
+        git add docs/leaderboard.html docs/leaderboard_data.json
+        git diff --staged --quiet || git commit -m "Update leaderboard: ${{ steps.results.outputs.username }} - F1: ${{ steps.results.outputs.macro_f1 }}"
+        git push || echo "⚠️ Push failed - leaderboard not updated"
+      continue-on-error: true
