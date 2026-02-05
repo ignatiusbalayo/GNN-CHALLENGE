@@ -8,6 +8,7 @@ setup_challenge.py
 # Challenge Secrets & Data
 data/private_labels.csv
 SECRET_KEY.txt
+METADATA_PRIVATE.json
 # IDE
 .vscode/
 .idea/
