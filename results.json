@@ -1,5 +1,10 @@
 {
-    "local_user": {
-        "accuracy": 0.0796
-    }
+  "status": "success",
+  "username": "baseline_submission",
+  "metrics": {
+    "accuracy": 19.76,
+    "macro_f1": 0.1423,
+    "graded_samples": 425
+  },
+  "message": "Graded successfully."
 }

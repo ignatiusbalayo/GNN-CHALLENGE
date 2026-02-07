@@ -4,7 +4,7 @@
 
 Welcome to the **Neural Citation Challenge**! This competition focuses on predicting the research topic of scientific papers using Graph Neural Networks (GNNs) on the **CiteSeer** citation network.
 
-**[🏆 View Live Leaderboard](https://igntrevor.github.io/gnn-challenge/leaderboard.html)**
+**[🏆 View Live Leaderboard](https://ignatiusbalayo.github.io/gnn-challenge/leaderboard.html)**
 
 ### Problem Description
 
@@ -132,7 +132,7 @@ To ensure a fair benchmark:
 
 The leaderboard is automatically updated when a Pull Request passes the evaluation.
 
-👉 **[View Live Leaderboard](https://igntrevor.github.io/gnn-challenge/leaderboard.html)**
+👉 **[View Live Leaderboard](https://ignatiusbalayo.github.io/gnn-challenge/leaderboard.html)**
 
 | Rank | User | Accuracy | F1-Macro | Date |
 |---|---|---|---|---|
@@ -150,4 +150,4 @@ The leaderboard is automatically updated when a Pull Request passes the evaluati
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-**Good luck and happy modeling! 🚀**
+**Good luck Have Fun! 🚀**
