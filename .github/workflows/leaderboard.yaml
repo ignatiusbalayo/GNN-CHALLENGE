@@ -24,7 +24,7 @@ jobs:
 
       - name: Rebuild leaderboard
         run: |
-          python scripts/rebuild_leaderboard.py
+          python scripts/update_leaderboard.py
 
       - uses: actions/upload-pages-artifact@v3
         with:
