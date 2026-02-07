@@ -14,7 +14,7 @@ jobs:
     
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4 # Updated to v4 for better performance
+      uses: actions/checkout@v4
       with:
         ref: ${{ github.event.pull_request.head.ref }}
         token: ${{ secrets.GITHUB_TOKEN }}
@@ -23,7 +23,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.12' # Aligned with your local environment
+        python-version: '3.12'
 
     - name: Install dependencies
       run: |
@@ -35,14 +35,12 @@ jobs:
         PRIVATE_LABELS: ${{ secrets.PRIVATE_LABELS }}
       run: |
         mkdir -p data
-        # Using printf to ensure newlines are preserved correctly from secrets
         printf "%s" "$PRIVATE_LABELS" > data/private_labels.csv
         echo "✓ Private labels reconstructed from Secret"
 
     - name: Find submission file
       id: find_submission
       run: |
-        # Fixed diff logic to handle cases where multiple files change
         SUBMISSION_FILE=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep 'submissions/.*\.csv$' | head -1)
         if [ -z "$SUBMISSION_FILE" ]; then
           echo "❌ No submission file found in diff"
@@ -53,7 +51,6 @@ jobs:
     - name: Grade submission
       id: grade_execution
       run: |
-        # This calls the dynamic grader we fixed (handling the 425 vs 746 split)
         python grader.py ${{ steps.find_submission.outputs.file }} > results.json
         cat results.json
       continue-on-error: true
@@ -66,13 +63,10 @@ jobs:
           echo "message=Grading script crashed. Check logs." >> $GITHUB_OUTPUT
           exit 0
         fi
-        
-        # Extracting metrics from the 'metrics' sub-dictionary in the JSON
         ACCURACY=$(python -c "import json; d=json.load(open('results.json')); print(d.get('metrics', {}).get('accuracy', 0))")
         MACRO_F1=$(python -c "import json; d=json.load(open('results.json')); print(d.get('metrics', {}).get('macro_f1', 0))")
         STATUS=$(python -c "import json; print(json.load(open('results.json')).get('status', 'error'))")
         MSG=$(python -c "import json; print(json.load(open('results.json')).get('message', ''))")
-        
         echo "accuracy=$ACCURACY" >> $GITHUB_OUTPUT
         echo "macro_f1=$MACRO_F1" >> $GITHUB_OUTPUT
         echo "status=$STATUS" >> $GITHUB_OUTPUT
@@ -86,20 +80,31 @@ jobs:
           const acc = "${{ steps.results.outputs.accuracy }}";
           const f1 = "${{ steps.results.outputs.macro_f1 }}";
           const msg = `${{ steps.results.outputs.message }}`;
-          
-          let body = "";
-          if (status === 'success') {
-            body = `## 🎉 Submission Graded: ${acc}% Accuracy\n\n**Macro-F1:** ${f1}\n\nYour score will be updated on the leaderboard soon!`;
-          } else {
-            body = `## ❌ Grading Error\n\n**Message:** ${msg}\n\nCheck your CSV format and ID alignment.`;
-          }
-          
+          let body = (status === 'success') 
+            ? `## 🎉 Submission Graded: ${acc}% Accuracy\n\n**Macro-F1:** ${f1}\n\nYour score has been added to the queue and will appear on the leaderboard after merging!` 
+            : `## ❌ Grading Error\n\n**Message:** ${msg}`;
           github.rest.issues.createComment({
             issue_number: context.issue.number,
             owner: context.repo.owner,
             repo: context.repo.repo,
             body: body
           })
+
+    # --- NEW MERGED STEPS START HERE ---
+    
+    - name: Update Leaderboard Files
+      if: steps.results.outputs.status == 'success'
+      run: |
+        python scripts/update_leaderboard.py results.json
+
+    - name: Push Leaderboard Changes
+      if: steps.results.outputs.status == 'success'
+      run: |
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+        git add docs/leaderboard_data.json docs/leaderboard.html
+        git commit -m "🏆 Auto-update leaderboard [skip ci]" || echo "No changes to commit"
+        git push origin HEAD:${{ github.event.pull_request.head.ref }}
 
     - name: Cleanup
       if: always()
